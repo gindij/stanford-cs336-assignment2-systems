@@ -2,6 +2,18 @@
 cs336-spring2024-assignment-2-submission.zip
 test_results.xml
 
+*.aux
+*.fdb_latexmk
+*.fls
+*.synctex.gz
+*.out
+*.log
+*.pdf
+
+*.csv
+
+plot.ipynb
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
