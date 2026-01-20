@@ -40,6 +40,7 @@ def main(args: argparse.Namespace):
         y = torch.randint(0, args.vocab_size, (args.batch_size, args.context_length), device=device)
 
         for _ in tqdm.tqdm(range(args.warmup_steps), desc="Warm-up"):
+            model.zero_grad()
             yhat = model(x)
             loss = cross_entropy(yhat, y)
             if device == "cuda:0":
@@ -51,12 +52,13 @@ def main(args: argparse.Namespace):
         forward_times = []
         backward_times = []
         for _ in tqdm.tqdm(range(args.profiling_steps), desc="Profiling"):
+            model.zero_grad()
             forward_start = time.perf_counter()
             yhat = model(x)
             loss = cross_entropy(yhat, y)
+            if device == "cuda:0":
+                torch.cuda.synchronize()
             if args.profile_forward:
-                if device == "cuda:0":
-                    torch.cuda.synchronize()
                 forward_times.append(time.perf_counter() - forward_start)
 
             if args.profile_backward:
@@ -93,11 +95,11 @@ if __name__ == "__main__":
     parser.add_argument("--configs-file", type=str, default="benchmark_configs.json")
     parser.add_argument("--output-file", type=str, default="output.csv")
 
-    parser.add_argument("--warmup-steps", type=int, default=100)
-    parser.add_argument("--profiling-steps", type=int, default=1000)
+    parser.add_argument("--warmup-steps", type=int, default=5)
+    parser.add_argument("--profiling-steps", type=int, default=10)
     parser.add_argument("--profile-forward", action="store_true")
     parser.add_argument("--profile-backward", action="store_true")
-    parser.add_argument("--batch-size", type=int, default=64)
+    parser.add_argument("--batch-size", type=int, default=4)
     args = parser.parse_args()
 
     main(args)
