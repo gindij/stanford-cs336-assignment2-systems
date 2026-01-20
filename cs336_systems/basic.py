@@ -42,7 +42,11 @@ def main(args: argparse.Namespace):
         for _ in tqdm.tqdm(range(args.warmup_steps), desc="Warm-up"):
             yhat = model(x)
             loss = cross_entropy(yhat, y)
+            if device == "cuda:0":
+                torch.cuda.synchronize()
             loss.backward()
+            if device == "cuda:0":
+                torch.cuda.synchronize()
 
         forward_times = []
         backward_times = []
@@ -51,6 +55,8 @@ def main(args: argparse.Namespace):
             yhat = model(x)
             loss = cross_entropy(yhat, y)
             if args.profile_forward:
+                if device == "cuda:0":
+                    torch.cuda.synchronize()
                 forward_times.append(time.perf_counter() - forward_start)
 
             if args.profile_backward:
