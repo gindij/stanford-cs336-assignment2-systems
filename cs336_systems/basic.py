@@ -10,6 +10,12 @@ import tqdm
 from cs336_basics.model import BasicsTransformerLM
 from cs336_basics.nn_utils import cross_entropy
 
+import cs336_basics.model
+from cs336_basics.model import annotated_scaled_dot_product_attention
+
+
+cs336_basics.model.scaled_dot_product_attention = annotated_scaled_dot_product_attention
+
 
 def main(args: argparse.Namespace):
     assert args.profile_forward or args.profile_backward
