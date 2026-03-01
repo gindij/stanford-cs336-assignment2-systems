@@ -114,6 +114,7 @@ if __name__ == "__main__":
     parser.add_argument("--profiling-steps", type=int, default=10)
     parser.add_argument("--profile-forward", action="store_true")
     parser.add_argument("--profile-backward", action="store_true")
+    parser.add_argument("--profile-optimizer", action="store_true")
     parser.add_argument("--batch-size", type=int, default=4)
     args = parser.parse_args()
 
