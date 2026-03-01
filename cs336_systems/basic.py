@@ -29,6 +29,8 @@ def main(args: argparse.Namespace):
     elif torch.backends.mps.is_available():
         device = "mps"
 
+    sync = torch.cuda.synchronize if torch.cuda.is_available() else lambda: None
+
     rows = []
     for config in configs:
         print(f"profiling {config['name']}")
@@ -42,6 +44,8 @@ def main(args: argparse.Namespace):
             rope_theta=args.rope_theta,
         ).to(device)
 
+        optimizer = torch.optim.AdamW(model.parameters())
+
         x = torch.randint(0, args.vocab_size - 1, (args.batch_size, args.context_length), device=device)
         y = torch.randint(0, args.vocab_size, (args.batch_size, args.context_length), device=device)
 
@@ -49,30 +53,35 @@ def main(args: argparse.Namespace):
             model.zero_grad()
             yhat = model(x)
             loss = cross_entropy(yhat, y)
-            if device == "cuda:0":
-                torch.cuda.synchronize()
+            sync()
             loss.backward()
-            if device == "cuda:0":
-                torch.cuda.synchronize()
+            sync()
+            optimizer.step()
+            sync()
 
         forward_times = []
         backward_times = []
+        optimizer_times = []
         for _ in tqdm.tqdm(range(args.profiling_steps), desc="Profiling"):
             model.zero_grad()
             forward_start = time.perf_counter()
             yhat = model(x)
             loss = cross_entropy(yhat, y)
-            if device == "cuda:0":
-                torch.cuda.synchronize()
+            sync()
             if args.profile_forward:
                 forward_times.append(time.perf_counter() - forward_start)
 
             if args.profile_backward:
                 backward_start = time.perf_counter()
                 loss.backward()
-                if device == "cuda:0":
-                    torch.cuda.synchronize()
+                sync()
                 backward_times.append(time.perf_counter() - backward_start)
+
+            if args.profile_optimizer:
+                optimizer_start = time.perf_counter()
+                optimizer.step()
+                sync()
+                optimizer_times.append(time.perf_counter() - optimizer_start)
 
         for name, times in [("forward", forward_times), ("backward", backward_times)]:
             if len(times) > 0:
