@@ -9,6 +9,7 @@ import tqdm
 
 from cs336_basics.model import BasicsTransformerLM
 from cs336_basics.nn_utils import cross_entropy
+from cs336_basics.optimizer import AdamW
 
 import cs336_basics.model
 from cs336_basics.model import annotated_scaled_dot_product_attention
@@ -44,7 +45,7 @@ def main(args: argparse.Namespace):
             rope_theta=args.rope_theta,
         ).to(device)
 
-        optimizer = torch.optim.AdamW(model.parameters())
+        optimizer = AdamW(model.parameters())
 
         x = torch.randint(0, args.vocab_size - 1, (args.batch_size, args.context_length), device=device)
         y = torch.randint(0, args.vocab_size, (args.batch_size, args.context_length), device=device)
