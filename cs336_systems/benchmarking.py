@@ -1,6 +1,7 @@
 import argparse
 import json
 import time
+import contextlib
 
 import numpy as np
 import pandas as pd
@@ -30,7 +31,8 @@ def main(args: argparse.Namespace):
     elif torch.backends.mps.is_available():
         device = "mps"
 
-    sync = torch.cuda.synchronize if torch.cuda.is_available() else lambda: None
+    maybe_sync = torch.cuda.synchronize if torch.cuda.is_available() else lambda: None
+    maybe_autocast = torch.autocast(device_type=device) if args.use_mixed_precision else contextlib.nullcontext()
 
     rows = []
     for config in configs:
@@ -51,38 +53,40 @@ def main(args: argparse.Namespace):
         y = torch.randint(0, args.vocab_size, (args.batch_size, args.context_length), device=device)
 
         for _ in tqdm.tqdm(range(args.warmup_steps), desc="Warm-up"):
-            model.zero_grad()
-            yhat = model(x)
-            loss = cross_entropy(yhat, y)
-            sync()
-            loss.backward()
-            sync()
-            optimizer.step()
-            sync()
+            with maybe_autocast:
+                model.zero_grad()
+                yhat = model(x)
+                loss = cross_entropy(yhat, y)
+                maybe_sync()
+                loss.backward()
+                maybe_sync()
+                optimizer.step()
+                maybe_sync()
 
         forward_times = []
         backward_times = []
         optimizer_times = []
         for _ in tqdm.tqdm(range(args.profiling_steps), desc="Profiling"):
-            model.zero_grad()
-            forward_start = time.perf_counter()
-            yhat = model(x)
-            loss = cross_entropy(yhat, y)
-            sync()
-            if args.profile_forward:
-                forward_times.append(time.perf_counter() - forward_start)
+            with maybe_autocast:
+                model.zero_grad()
+                forward_start = time.perf_counter()
+                yhat = model(x)
+                loss = cross_entropy(yhat, y)
+                maybe_sync()
+                if args.profile_forward:
+                    forward_times.append(time.perf_counter() - forward_start)
 
-            if args.profile_backward:
-                backward_start = time.perf_counter()
-                loss.backward()
-                sync()
-                backward_times.append(time.perf_counter() - backward_start)
+                if args.profile_backward:
+                    backward_start = time.perf_counter()
+                    loss.backward()
+                    maybe_sync()
+                    backward_times.append(time.perf_counter() - backward_start)
 
-            if args.profile_optimizer:
-                optimizer_start = time.perf_counter()
-                optimizer.step()
-                sync()
-                optimizer_times.append(time.perf_counter() - optimizer_start)
+                if args.profile_optimizer:
+                    optimizer_start = time.perf_counter()
+                    optimizer.step()
+                    maybe_sync()
+                    optimizer_times.append(time.perf_counter() - optimizer_start)
 
         for name, times in [("forward", forward_times), ("backward", backward_times)]:
             if len(times) > 0:
@@ -116,6 +120,7 @@ if __name__ == "__main__":
     parser.add_argument("--profile-forward", action="store_true")
     parser.add_argument("--profile-backward", action="store_true")
     parser.add_argument("--profile-optimizer", action="store_true")
+    parser.add_argument("--use-mixed-precision", action="store_true")
     parser.add_argument("--batch-size", type=int, default=4)
     args = parser.parse_args()
 

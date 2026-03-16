@@ -1,0 +1,137 @@
+\documentclass[11pt, letterpaper]{article}
+
+% --- Packages ---
+\usepackage[utf8]{inputenc}     % Text encoding
+\usepackage[T1]{fontenc}        % Font encoding
+\usepackage{geometry}           % Page margins
+\usepackage{amsmath, amssymb}   % Math symbols and environments
+\usepackage{graphicx}           % Graphics inclusion
+\usepackage{hyperref}           % Hyperlinks
+\usepackage{booktabs}           % Nice tables
+\usepackage{enumitem}           % Custom lists
+\usepackage{listings}           % Code listings
+\usepackage{xcolor}             % Colors
+\usepackage{enumitem}
+
+% --- Page Setup ---
+\geometry{margin=1in}
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue,
+    filecolor=magenta,
+    urlcolor=cyan,
+    citecolor=red
+}
+
+% --- Code Listing Setup ---
+\definecolor{codegreen}{rgb}{0,0.6,0}
+\definecolor{codegray}{rgb}{0.5,0.5,0.5}
+\definecolor{codepurple}{rgb}{0.58,0,0.82}
+\definecolor{backcolour}{rgb}{0.95,0.95,0.92}
+
+\lstdefinestyle{mystyle}{
+    backgroundcolor=\color{backcolour},
+    commentstyle=\color{codegreen},
+    keywordstyle=\color{magenta},
+    numberstyle=\tiny\color{codegray},
+    stringstyle=\color{codepurple},
+    basicstyle=\ttfamily\footnotesize,
+    breakatwhitespace=false,
+    breaklines=true,
+    captionpos=b,
+    keepspaces=true,
+    numbers=left,
+    numbersep=5pt,
+    showspaces=false,
+    showstringspaces=false,
+    showtabs=false,
+    tabsize=2
+}
+\lstset{style=mystyle}
+
+% --- Metadata ---
+\title{CS336 Assignment 2: Systems Writeup}
+\author{Jack Gindi}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+% Content goes here
+\section*{Section 1.1.3: \texttt{benchmarking\_script}}
+The timing results for models of different sizes are shown in the tables below. The warmup steps do seem to smooth out variation in the timing results. The warmup steps help to prepare the low-level GPU kernels, handles any just-in-time compilation, allocates memory, etc.
+
+\begin{figure}[h]
+\centering
+\begin{tabular}{lllrrrr}
+\toprule
+size & dir & max & min & mean & std \\
+\midrule
+small & backward & 0.035607 & 0.035264 & 0.035486 & 0.000112 \\
+medium & backward & 0.099147 & 0.098476 & 0.098883 & 0.000259 \\
+large & backward & 0.234631 & 0.233548 & 0.234263 & 0.000373 \\
+xl & backward & 0.453026 & 0.451697 & 0.452556 & 0.000360 \\
+2.7B & backward & 0.694727 & 0.694260 & 0.694408 & 0.000139 \\
+small & forward & 0.025782 & 0.022398 & 0.023705 & 0.001084 \\
+medium & forward & 0.050476 & 0.049973 & 0.050178 & 0.000143 \\
+large & forward & 0.112792 & 0.112307 & 0.112500 & 0.000174 \\
+xl & forward & 0.227439 & 0.227168 & 0.227331 & 0.000072 \\
+2.7B & forward & 0.317274 & 0.317153 & 0.317219 & 0.000046 \\
+\bottomrule
+\end{tabular}
+\caption{With 5 warmup steps}
+\label{warmup}
+\end{figure}
+
+\begin{figure}[h]
+\centering
+\begin{tabular}{lllrrrr}
+\toprule
+size & dir & max & min & mean & std \\
+\midrule
+small & backward & 0.128166 & 0.035578 & 0.044947 & 0.027740 \\
+medium & backward & 0.099953 & 0.099027 & 0.099469 & 0.000240 \\
+large & backward & 0.235235 & 0.233817 & 0.234808 & 0.000429 \\
+xl & backward & 0.453695 & 0.451574 & 0.452734 & 0.000598 \\
+2.7B & backward & 0.695350 & 0.694763 & 0.695027 & 0.000195 \\
+small & forward & 0.550711 & 0.020384 & 0.075024 & 0.158566 \\
+medium & forward & 0.102385 & 0.050336 & 0.055617 & 0.015589 \\
+large & forward & 0.142311 & 0.112531 & 0.115755 & 0.008855 \\
+xl & forward & 0.261517 & 0.227697 & 0.231143 & 0.010125 \\
+2.7B & forward & 0.364554 & 0.317493 & 0.322286 & 0.014090 \\
+\bottomrule
+\end{tabular}
+\caption{With no warmup.}
+\label{no-warmup}
+\end{figure}
+
+\section*{Section 1.1.4: \texttt{nsys\_profile}}
+(The results below are discussed for the largest model we evaluated.)
+\begin{enumerate}[label=(\alph*)]
+    \item The time spent on the forward pass is about 0.090s per iteration after warmup. This is larger than 0.031s measured with the python standard library. This extra runtime is likely due to profiler overhead.
+    \item The CUDA kernel that takes up the most time in the forward pass is \texttt{sm80\_xmma\_gemm\_f32f32\_f32f32\_f32\_tn\_n\_tilesize128x128x8\_stage3\_warpsize2x2x1\_ffma\_aligna4\_alignc4\_execute\_kernel\_\_5x\_cublas}. It takes approximately 89\% of the time in forward pass and is invoked 225 times. It still takes up the most time overall when doing a forward and a backward pass, but the kernel that is most active in the backward pass is \texttt{cutlass::Kernel2<cutlass\_80\_simt\_sgemm\_256x128\_8x4\_nn\_align1>}, which is invoked 193 times during a backward pass. This makes sense, since in the forward pass the matrix computations required are simpler and can use a more optimized, tensor-friendly kernel. The backward pass, whose tensor calculations are more involved and complex, fall back to the more generic cutlass kernel.
+    \item The other kernels that are elementwise and vectorized elementwise kernels. These are kernels likely used in computing softmaxes, cross entropies, masking, activations, etc.
+    \item The fraction of time spent on matrix multiplication decreases when also profiling the optimizer step. This occurs because the optimizer step has to update parameters, which requires apply kernels, elementwise operations, etc, which do not require matrix multiplications.
+    \item Softmax requires fewer FLOPs, but our unoptimized implementation takes longer than the highly optimized matrix multiplication operations. This is because the matrix multiplications are compute-bound and have high arithmetic intensity (which means that the ratio of time spent moving data to and from GPU memory is small relative to the amount of compute required to complete the computation itself). Our unfused softmax implementation, on the other hand, is memory-bound and has low arithmetic intensity because it invokes several kernels in sequence. Each kernel reads from and then writes to HBM, which slows the operation down. Optimized softmax kernels solve this problem by fusing the sequenced operations together so that a softmax only requires one data trip to and from HBM.
+\end{enumerate}
+
+\section*{Section 1.1.5: \texttt{mixed\_precision\_accumulation}}
+As we would expect, the most accurate snippet is the one that accumulates f32s into an f32 (as we would expect). While not quite as accurate, next best is when we accumulate f16s into an f32 (as suggested by the assignment). This would give us the space/speed advantages of using lower precision with only a small drop in model performance.
+
+\section*{Section 1.1.6}
+\begin{enumerate}[label=(\alph*)]
+    \item
+    \begin{itemize}
+        \item The parameters are stored in \texttt{f16}.
+        \item The output of the feedforward layer is in \texttt{f16}.
+        \item The output of the layer normalization is in \texttt{f32}, since summing activations benefits from a higher precision accumulator.
+        \item The logits are in \texttt{f16} again.
+        \item The loss is computed in \texttt{f32}, as it often involves exponentials or logarithms, which are prone to over/underflow in lower precision.
+        \item The gradients are in \texttt{f16} and are used to update the stored \texttt{f32} parameters. These updated parameters are then cast down to \texttt{f16} for the next computation round.
+    \end{itemize}
+    \item In layer normalization, the most sensitive part of the computation is the squaring that occurs in the variance term. If individual activations deviate heavily from the mean activation, they can overflow fp16s due to their limited range. Bf16s help mitigate this by devoting more of their bits to the exponent (rather than the mantissa), thereby more readily accommodating larger values.
+    \item
+\end{enumerate}
+
+\end{document}
