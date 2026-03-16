@@ -32,7 +32,7 @@ def main(args: argparse.Namespace):
         device = "mps"
 
     maybe_sync = torch.cuda.synchronize if torch.cuda.is_available() else lambda: None
-    maybe_autocast = torch.autocast(device_type=device) if args.use_mixed_precision else contextlib.nullcontext()
+    maybe_autocast = torch.autocast(device_type=device.split(":")[0]) if args.use_mixed_precision else contextlib.nullcontext()
 
     rows = []
     for config in configs:
