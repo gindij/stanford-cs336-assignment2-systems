@@ -32,7 +32,9 @@ def main(args: argparse.Namespace):
         device = "mps"
 
     maybe_sync = torch.cuda.synchronize if torch.cuda.is_available() else lambda: None
-    maybe_autocast = torch.autocast(device_type=device.split(":")[0]) if args.use_mixed_precision else contextlib.nullcontext()
+    maybe_autocast = (
+        torch.autocast(device_type=device.split(":")[0]) if args.use_mixed_precision else contextlib.nullcontext()
+    )
 
     rows = []
     for config in configs:
@@ -60,8 +62,8 @@ def main(args: argparse.Namespace):
                 maybe_sync()
                 loss.backward()
                 maybe_sync()
-                optimizer.step()
-                maybe_sync()
+            optimizer.step()
+            maybe_sync()
 
         forward_times = []
         backward_times = []
@@ -82,11 +84,11 @@ def main(args: argparse.Namespace):
                     maybe_sync()
                     backward_times.append(time.perf_counter() - backward_start)
 
-                if args.profile_optimizer:
-                    optimizer_start = time.perf_counter()
-                    optimizer.step()
-                    maybe_sync()
-                    optimizer_times.append(time.perf_counter() - optimizer_start)
+            if args.profile_optimizer:
+                optimizer_start = time.perf_counter()
+                optimizer.step()
+                maybe_sync()
+                optimizer_times.append(time.perf_counter() - optimizer_start)
 
         for name, times in [("forward", forward_times), ("backward", backward_times)]:
             if len(times) > 0:
