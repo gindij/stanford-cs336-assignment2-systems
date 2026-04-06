@@ -54,56 +54,59 @@ def main(args: argparse.Namespace):
         x = torch.randint(0, args.vocab_size - 1, (args.batch_size, args.context_length), device=device)
         y = torch.randint(0, args.vocab_size, (args.batch_size, args.context_length), device=device)
 
-        for _ in tqdm.tqdm(range(args.warmup_steps), desc="Warm-up"):
-            with maybe_autocast:
-                model.zero_grad()
-                yhat = model(x)
-                loss = cross_entropy(yhat, y)
-                maybe_sync()
-                loss.backward()
-                maybe_sync()
-            optimizer.step()
-            maybe_sync()
-
-        forward_times = []
-        backward_times = []
-        optimizer_times = []
-        for _ in tqdm.tqdm(range(args.profiling_steps), desc="Profiling"):
-            with maybe_autocast:
-                model.zero_grad()
-                forward_start = time.perf_counter()
-                yhat = model(x)
-                loss = cross_entropy(yhat, y)
-                maybe_sync()
-                if args.profile_forward:
-                    forward_times.append(time.perf_counter() - forward_start)
-
-                if args.profile_backward:
-                    backward_start = time.perf_counter()
+        try:
+            for _ in tqdm.tqdm(range(args.warmup_steps), desc="Warm-up"):
+                with maybe_autocast:
+                    model.zero_grad()
+                    yhat = model(x)
+                    loss = cross_entropy(yhat, y)
+                    maybe_sync()
                     loss.backward()
                     maybe_sync()
-                    backward_times.append(time.perf_counter() - backward_start)
-
-            if args.profile_optimizer:
-                optimizer_start = time.perf_counter()
                 optimizer.step()
                 maybe_sync()
-                optimizer_times.append(time.perf_counter() - optimizer_start)
 
-        for name, times in [("forward", forward_times), ("backward", backward_times)]:
-            if len(times) > 0:
-                max_time, min_time = float(np.max(times)), float(np.min(times))
-                mean = float(np.mean(times))
-                stddev = float(np.std(times))
-                row = {
-                    "size": config["name"],
-                    "dir": name,
-                    "max": max_time,
-                    "min": min_time,
-                    "mean": mean,
-                    "std": stddev,
-                }
-                rows.append(row)
+            forward_times = []
+            backward_times = []
+            optimizer_times = []
+            for _ in tqdm.tqdm(range(args.profiling_steps), desc="Profiling"):
+                with maybe_autocast:
+                    model.zero_grad()
+                    forward_start = time.perf_counter()
+                    yhat = model(x)
+                    loss = cross_entropy(yhat, y)
+                    maybe_sync()
+                    if args.profile_forward:
+                        forward_times.append(time.perf_counter() - forward_start)
+
+                    if args.profile_backward:
+                        backward_start = time.perf_counter()
+                        loss.backward()
+                        maybe_sync()
+                        backward_times.append(time.perf_counter() - backward_start)
+
+                if args.profile_optimizer:
+                    optimizer_start = time.perf_counter()
+                    optimizer.step()
+                    maybe_sync()
+                    optimizer_times.append(time.perf_counter() - optimizer_start)
+
+            for name, times in [("forward", forward_times), ("backward", backward_times)]:
+                if len(times) > 0:
+                    max_time, min_time = float(np.max(times)), float(np.min(times))
+                    mean = float(np.mean(times))
+                    stddev = float(np.std(times))
+                    row = {
+                        "size": config["name"],
+                        "dir": name,
+                        "max": max_time,
+                        "min": min_time,
+                        "mean": mean,
+                        "std": stddev,
+                    }
+                    rows.append(row)
+        except torch.OutOfMemoryError:
+            print(f"Config {config['name']} resulted in OOM. Skipping.")
 
     pd.DataFrame(rows).to_csv(args.output_file)
 
