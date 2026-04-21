@@ -35,6 +35,7 @@ def main(args: argparse.Namespace):
     maybe_autocast = (
         torch.autocast(device_type=device.split(":")[0]) if args.use_mixed_precision else contextlib.nullcontext()
     )
+    maybe_no_grad = torch.no_grad() if not args.profile_backward else contextlib.nullcontext()
 
     rows = []
     for config in configs:
@@ -75,13 +76,14 @@ def main(args: argparse.Namespace):
 
             for _ in tqdm.tqdm(range(args.profiling_steps), desc="Profiling"):
                 with maybe_autocast:
-                    model.zero_grad()
-                    forward_start = time.perf_counter()
-                    yhat = model(x)
-                    loss = cross_entropy(yhat, y)
-                    maybe_sync()
-                    if args.profile_forward:
-                        forward_times.append(time.perf_counter() - forward_start)
+                    with maybe_no_grad:
+                        model.zero_grad()
+                        forward_start = time.perf_counter()
+                        yhat = model(x)
+                        loss = cross_entropy(yhat, y)
+                        maybe_sync()
+                        if args.profile_forward:
+                            forward_times.append(time.perf_counter() - forward_start)
 
                     if args.profile_backward:
                         backward_start = time.perf_counter()
