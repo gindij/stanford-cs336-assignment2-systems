@@ -35,7 +35,7 @@ def main(args: argparse.Namespace):
     maybe_autocast = (
         torch.autocast(device_type=device.split(":")[0]) if args.use_mixed_precision else contextlib.nullcontext()
     )
-    maybe_no_grad = torch.no_grad() if not args.profile_backward else contextlib.nullcontext()
+    maybe_no_grad = torch.no_grad if not args.profile_backward else contextlib.nullcontext
 
     rows = []
     for config in configs:
@@ -50,7 +50,9 @@ def main(args: argparse.Namespace):
             rope_theta=args.rope_theta,
         ).to(device)
 
-        optimizer = AdamW(model.parameters())
+        optimizer = None
+        if args.profile_optimizer:
+            optimizer = AdamW(model.parameters())
 
         x = torch.randint(0, args.vocab_size - 1, (args.batch_size, args.context_length), device=device)
         y = torch.randint(0, args.vocab_size, (args.batch_size, args.context_length), device=device)
@@ -58,14 +60,17 @@ def main(args: argparse.Namespace):
         try:
             for _ in tqdm.tqdm(range(args.warmup_steps), desc="Warm-up"):
                 with maybe_autocast:
-                    model.zero_grad()
-                    yhat = model(x)
-                    loss = cross_entropy(yhat, y)
-                    maybe_sync()
-                    loss.backward()
-                    maybe_sync()
-                optimizer.step()
-                maybe_sync()
+                    with maybe_no_grad():
+                        model.zero_grad()
+                        yhat = model(x)
+                        loss = cross_entropy(yhat, y)
+                        maybe_sync()
+                        if args.profile_backward:
+                            loss.backward()
+                            maybe_sync()
+                            if args.profile_optimizer:
+                                optimizer.step()
+                                maybe_sync()
 
             forward_times = []
             backward_times = []
@@ -76,7 +81,7 @@ def main(args: argparse.Namespace):
 
             for _ in tqdm.tqdm(range(args.profiling_steps), desc="Profiling"):
                 with maybe_autocast:
-                    with maybe_no_grad:
+                    with maybe_no_grad():
                         model.zero_grad()
                         forward_start = time.perf_counter()
                         yhat = model(x)
@@ -90,12 +95,11 @@ def main(args: argparse.Namespace):
                         loss.backward()
                         maybe_sync()
                         backward_times.append(time.perf_counter() - backward_start)
-
-                if args.profile_optimizer:
-                    optimizer_start = time.perf_counter()
-                    optimizer.step()
-                    maybe_sync()
-                    optimizer_times.append(time.perf_counter() - optimizer_start)
+                        if args.profile_optimizer:
+                            optimizer_start = time.perf_counter()
+                            optimizer.step()
+                            maybe_sync()
+                            optimizer_times.append(time.perf_counter() - optimizer_start)
 
             if torch.cuda.is_available() and args.profile_memory:
                 torch.cuda.memory._dump_snapshot(
