@@ -96,7 +96,9 @@ def main(args: argparse.Namespace):
                     optimizer_times.append(time.perf_counter() - optimizer_start)
 
             if torch.cuda.is_available() and args.profile_memory:
-                torch.cuda.memory._dump_snapshot(f"memory_snapshot_{config['name']}.pickle")
+                torch.cuda.memory._dump_snapshot(
+                    f"memory_snapshot_{config['name']}_{args.memory_output_file_suffix}.pickle"
+                )
                 torch.cuda.memory._record_memory_history(enabled=None)
 
             for name, times in [("forward", forward_times), ("backward", backward_times)]:
@@ -127,6 +129,7 @@ if __name__ == "__main__":
 
     parser.add_argument("--configs-file", type=str, default="benchmark_configs.json")
     parser.add_argument("--output-file", type=str, default="output.csv")
+    parser.add_argument("--memory-output-file-suffix", type=str, default="")
 
     parser.add_argument("--warmup-steps", type=int, default=5)
     parser.add_argument("--profiling-steps", type=int, default=10)
