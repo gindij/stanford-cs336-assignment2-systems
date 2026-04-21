@@ -69,6 +69,10 @@ def main(args: argparse.Namespace):
             forward_times = []
             backward_times = []
             optimizer_times = []
+
+            if torch.cuda.is_available() and args.profile_memory:
+                torch.cuda.memory._record_memory_history(max_entries=1_000_000)
+
             for _ in tqdm.tqdm(range(args.profiling_steps), desc="Profiling"):
                 with maybe_autocast:
                     model.zero_grad()
@@ -90,6 +94,10 @@ def main(args: argparse.Namespace):
                     optimizer.step()
                     maybe_sync()
                     optimizer_times.append(time.perf_counter() - optimizer_start)
+
+            if torch.cuda.is_available() and args.profile_memory:
+                torch.cuda.memory._dump_snapshot("memory_snapshot.pickle")
+                torch.cuda.memory._record_memory_history(enabled=None)
 
             for name, times in [("forward", forward_times), ("backward", backward_times)]:
                 if len(times) > 0:
@@ -124,6 +132,7 @@ if __name__ == "__main__":
     parser.add_argument("--profiling-steps", type=int, default=10)
     parser.add_argument("--profile-forward", action="store_true")
     parser.add_argument("--profile-backward", action="store_true")
+    parser.add_argument("--profile-memory", action="store_true")
     parser.add_argument("--profile-optimizer", action="store_true")
     parser.add_argument("--use-mixed-precision", action="store_true")
     parser.add_argument("--batch-size", type=int, default=4)
