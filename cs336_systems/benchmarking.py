@@ -96,7 +96,7 @@ def main(args: argparse.Namespace):
                     optimizer_times.append(time.perf_counter() - optimizer_start)
 
             if torch.cuda.is_available() and args.profile_memory:
-                torch.cuda.memory._dump_snapshot("memory_snapshot.pickle")
+                torch.cuda.memory._dump_snapshot(f"memory_snapshot_{config['name']}.pickle")
                 torch.cuda.memory._record_memory_history(enabled=None)
 
             for name, times in [("forward", forward_times), ("backward", backward_times)]:
